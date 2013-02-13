@@ -6,12 +6,12 @@
 
     <groupId>com.microsigns.graylog</groupId>
     <artifactId>gelfj</artifactId>
-    <version>0.9.3-SNAPSHOT</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
 
     <name>gelfj</name>
     <description>GELF implementation in Java and log4j appender.</description>
-    <url>https://bitbucket.org/microsigns/gelfj</url>
+    <url>https://github.com/microsigns/gelfj</url>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -43,8 +43,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>2.0.2</version>
                 <configuration>
-                    <source>1.5</source>
-                    <target>1.5</target>
+                    <source>1.6</source>
+                    <target>1.6</target>
                 </configuration>
             </plugin>
         </plugins>

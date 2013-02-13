@@ -1,26 +1,22 @@
 package org.graylog2.log;
 
 import org.apache.log4j.AppenderSkeleton;
-import org.apache.log4j.Level;
-import org.apache.log4j.MDC;
 import org.apache.log4j.spi.ErrorCode;
-import org.apache.log4j.spi.LocationInfo;
 import org.apache.log4j.spi.LoggingEvent;
-import org.apache.log4j.spi.ThrowableInformation;
 import org.graylog2.GelfMessage;
 import org.graylog2.GelfMessageFactory;
 import org.graylog2.GelfMessageProvider;
 import org.graylog2.GelfSender;
 import org.json.simple.JSONValue;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import org.graylog2.*;
 
 /**
  *
@@ -36,6 +32,7 @@ public class GelfAppender extends AppenderSkeleton implements GelfMessageProvide
     private GelfSender gelfSender;
     private boolean extractStacktrace;
     private boolean addExtendedInformation;
+    private boolean includeLocation = true;
     private Map<String, String> fields;
 
     public GelfAppender() {
@@ -107,7 +104,15 @@ public class GelfAppender extends AppenderSkeleton implements GelfMessageProvide
     public void setAddExtendedInformation(boolean addExtendedInformation) {
         this.addExtendedInformation = addExtendedInformation;
     }
-    
+
+    public boolean isIncludeLocation() {
+        return this.includeLocation;
+    }
+
+    public void setIncludeLocation(boolean includeLocation) {
+        this.includeLocation = includeLocation;
+    }
+
     public Map<String, String> getFields() {
         if (fields == null) {
             fields = new HashMap<String, String>();
@@ -117,13 +122,27 @@ public class GelfAppender extends AppenderSkeleton implements GelfMessageProvide
 
     @Override
     public void activateOptions() {
-        try {
-            gelfSender = new GelfSender(graylogHost, graylogPort);
-        } catch (UnknownHostException e) {
-            errorHandler.error("Unknown Graylog2 hostname:" + getGraylogHost(), e, ErrorCode.WRITE_FAILURE);
-        } catch (SocketException e) {
-            errorHandler.error("Socket exception", e, ErrorCode.WRITE_FAILURE);
-        }
+		if (graylogHost == null) {
+			errorHandler.error("Graylog2 hostname is empty!", null, ErrorCode.WRITE_FAILURE);
+		} else {
+			try {
+				if (graylogHost.startsWith("tcp:")) {
+					String tcpGraylogHost = graylogHost.substring(4);
+					gelfSender = new GelfTCPSender(tcpGraylogHost, graylogPort);
+				} else if (graylogHost.startsWith("udp:")) {
+					String udpGraylogHost = graylogHost.substring(4);
+					gelfSender = new GelfUDPSender(udpGraylogHost, graylogPort);
+				} else {
+					gelfSender = new GelfUDPSender(graylogHost, graylogPort);
+				}
+			} catch (UnknownHostException e) {
+				errorHandler.error("Unknown Graylog2 hostname:" + getGraylogHost(), e, ErrorCode.WRITE_FAILURE);
+			} catch (SocketException e) {
+				errorHandler.error("Socket exception", e, ErrorCode.WRITE_FAILURE);
+			} catch (IOException e) {
+				errorHandler.error("IO exception", e, ErrorCode.WRITE_FAILURE);
+			}
+		}
     }
 
     @Override
