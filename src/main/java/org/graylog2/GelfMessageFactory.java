@@ -23,9 +23,13 @@ public class GelfMessageFactory {
         long timeStamp = Log4jVersionChecker.getTimeStamp(event);
         Level level = event.getLevel();
 
-        LocationInfo locationInformation = event.getLocationInformation();
-        String file = locationInformation.getFileName();
-        String lineNumber = locationInformation.getLineNumber();
+        String file = null;
+        String lineNumber = null;
+        if (provider.isIncludeLocation()) {
+            LocationInfo locationInformation = event.getLocationInformation();
+            file = locationInformation.getFileName();
+            lineNumber = locationInformation.getLineNumber();
+        }
 
         String renderedMessage = event.getRenderedMessage();
         String shortMessage;
@@ -34,18 +38,18 @@ public class GelfMessageFactory {
             renderedMessage = "";
         }
 
-        if (renderedMessage.length() > MAX_SHORT_MESSAGE_LENGTH) {
-            shortMessage = renderedMessage.substring(0, MAX_SHORT_MESSAGE_LENGTH - 1);
-        }
-        else {
-            shortMessage = renderedMessage;
-        }
-
         if (provider.isExtractStacktrace()) {
             ThrowableInformation throwableInformation = event.getThrowableInformation();
             if (throwableInformation != null) {
                 renderedMessage += "\n\r" + extractStacktrace(throwableInformation);
             }
+        }
+        
+        if (renderedMessage.length() > MAX_SHORT_MESSAGE_LENGTH) {
+            shortMessage = renderedMessage.substring(0, MAX_SHORT_MESSAGE_LENGTH - 1);
+        }
+        else {
+            shortMessage = renderedMessage;
         }
         
         GelfMessage gelfMessage = new GelfMessage(shortMessage, renderedMessage, timeStamp,
