@@ -4,11 +4,13 @@ import org.json.simple.JSONValue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.zip.GZIPOutputStream;
 
 public class GelfMessage {
@@ -34,13 +36,8 @@ public class GelfMessage {
     public GelfMessage() {
     }
 
-    // todo: merge these constructors.
-
-    public GelfMessage(String shortMessage, String fullMessage, Date timestamp, String level) {
-        this.shortMessage = shortMessage;
-        this.fullMessage = fullMessage;
-        this.javaTimestamp = timestamp.getTime();
-        this.level = level;
+    public GelfMessage(String shortMessage, String fullMessage, long timestamp, String level) {
+        this(shortMessage, fullMessage, timestamp, level, null, null);
     }
 
     public GelfMessage(String shortMessage, String fullMessage, Long timestamp, String level, String line, String file) {
@@ -81,25 +78,43 @@ public class GelfMessage {
         return JSONValue.toJSONString(map);
     }
 
-    public List<byte[]> toDatagrams() {
-        byte[] messageBytes = gzipMessage(toJson());
-        List<byte[]> datagrams = new ArrayList<byte[]>();
-        if (messageBytes.length > MAXIMUM_CHUNK_SIZE) {
-            sliceDatagrams(messageBytes, datagrams);
-        } else {
-            datagrams.add(messageBytes);
-        }
-        return datagrams;
-    }
+    public ByteBuffer[] toBuffers() {
+		byte[] messageBytes = gzipMessage( toJson() );
+		// calculate the length of the datagrams array
+		int diagrams_length=messageBytes.length / MAXIMUM_CHUNK_SIZE;
+		// In case of a remainder, due to the integer division, add a extra datagram
+		if ( messageBytes.length % MAXIMUM_CHUNK_SIZE != 0 ) {
+			diagrams_length++;
+		}
+		ByteBuffer[] datagrams = new ByteBuffer[ diagrams_length ];
+		if ( messageBytes.length > MAXIMUM_CHUNK_SIZE ) {
+			sliceDatagrams( messageBytes, datagrams );
+		} else {
+			datagrams[0] = ByteBuffer.allocate( messageBytes.length );
+			datagrams[0].put( messageBytes );
+			datagrams[0].flip();
+		}
+		return datagrams;
+	}
 
-    private void sliceDatagrams(byte[] messageBytes, List<byte[]> datagrams) {
+    public ByteBuffer toBuffer() {
+		byte[] messageBytes = gzipMessage( toJson() );
+		ByteBuffer buffer = ByteBuffer.allocate( messageBytes.length );
+		buffer.put( messageBytes );
+		buffer.flip();
+		return buffer;
+	}
+
+	private void sliceDatagrams(byte[] messageBytes, ByteBuffer[] datagrams)
+	{
         int messageLength = messageBytes.length;
         byte[] messageId = ByteBuffer.allocate(8)
-            .putInt((int) System.currentTimeMillis())       // 4 least-significant-bytes of the time in millis
+            .putInt(getCurrentMillis())       // 4 least-significant-bytes of the time in millis
             .put(hostBytes)                                // 4 least-significant-bytes of the host
             .array();
 
-        int num = ((Double) Math.ceil((double) messageLength / MAXIMUM_CHUNK_SIZE)).intValue();
+        // Reuse length of datagrams array since this is supposed to be the correct number of datagrams
+        int num = datagrams.length;
         for (int idx = 0; idx < num; idx++) {
             byte[] header = concatByteArray(GELF_CHUNKED_ID, concatByteArray(messageId, new byte[]{(byte) idx, (byte) num}));
             int from = idx * MAXIMUM_CHUNK_SIZE;
@@ -107,9 +122,15 @@ public class GelfMessage {
             if (to >= messageLength) {
                 to = messageLength;
             }
-            byte[] datagram = concatByteArray(header, Arrays.copyOfRange(messageBytes, from, to));
-            datagrams.add(datagram);
+			byte[] datagram = concatByteArray( header, Arrays.copyOfRange( messageBytes, from, to ) );
+			datagrams[idx] = ByteBuffer.allocate( datagram.length );
+			datagrams[idx].put(datagram);
+			datagrams[idx].flip();
         }
+    }
+
+    public int getCurrentMillis() {
+        return (int) System.currentTimeMillis();
     }
 
     private byte[] gzipMessage(String message) {
@@ -117,7 +138,13 @@ public class GelfMessage {
 
         try {
             GZIPOutputStream stream = new GZIPOutputStream(bos);
-            stream.write(message.getBytes());
+            byte[] bytes = null;
+            try {
+                bytes = message.getBytes("UTF-8");
+            } catch (UnsupportedEncodingException e) {
+                throw new RuntimeException("No UTF-8 support available.", e);
+            }
+            stream.write(bytes);
             stream.finish();
             stream.close();
             byte[] zipped = bos.toByteArray();
